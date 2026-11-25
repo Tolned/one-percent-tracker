@@ -1,8 +1,9 @@
-from django.urls import path, include
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
+
 from .views import HabitViewSet, PublicHabitViewSet
 
-app_name = "habit_tracker"
+app_name = "habits"
 
 router = DefaultRouter()
 router.register(r"habits", HabitViewSet, basename="habit")

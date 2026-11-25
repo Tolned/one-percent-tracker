@@ -1,12 +1,12 @@
 import os
-from pathlib import Path
 from datetime import timedelta
-from celery.schedules import crontab
+from pathlib import Path
+
 import environ
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Инициализация django-environ
 env = environ.Env(DEBUG=(bool, False))
 environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
 
@@ -14,7 +14,6 @@ SECRET_KEY = env("SECRET_KEY", default="django-insecure-default-key")
 DEBUG = env("DEBUG", default=False)
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["127.0.0.1", "localhost"])
 
-# Application definition
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -25,10 +24,13 @@ INSTALLED_APPS = [
     # Сторонние приложения
     "corsheaders",
     "rest_framework",
+    "rest_framework_simplejwt",
+    "django_filters",
     "drf_spectacular",
     "django_celery_beat",
     # Локальные приложения
-    "habit_tracker",
+    "users",
+    "habits",
 ]
 
 MIDDLEWARE = [
@@ -62,12 +64,10 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# Database
-DATABASES = {
-    "default": env.db("DATABASE_URL"),
-}
+DATABASES = {"default": env.db("DATABASE_URL")}
 
-# Password validation
+AUTH_USER_MODEL = "users.User"
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -76,7 +76,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = "ru-ru"
-TIME_ZONE = "UTC"  # Важно для Celery Beat
+TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
@@ -84,7 +84,7 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ==========================================
-# CORS НАСТРОЙКИ
+# CORS
 # ==========================================
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 CORS_ALLOW_CREDENTIALS = True
@@ -95,8 +95,13 @@ CORS_ALLOW_CREDENTIALS = True
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ("rest_framework_simplejwt.authentication.JWTAuthentication",),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": 5,  # КРИТЕРИЙ: вывод по 5 привычек на страницу
+    # LimitOffsetPagination даёт limit/offset/count/results — как требует критерий
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
+    "PAGE_SIZE": 5,  # КРИТЕРИЙ: по 5 привычек на страницу
+    "DEFAULT_FILTER_BACKENDS": (
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.OrderingFilter",
+    ),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
@@ -104,10 +109,21 @@ REST_FRAMEWORK = {
 # DRF SPECTACULAR (Документация)
 # ==========================================
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Habit Tracker API",
-    "DESCRIPTION": 'API для трекера полезных привычек на основе книги "Атомные привычки".',
+    "TITLE": "One Percent Tracker API",
+    "DESCRIPTION": 'API трекера полезных привычек на основе книги "Атомные привычки" Джеймса Клира.',
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    "COMPONENT_SPLIT_REQUEST": True,
+}
+
+# ==========================================
+# JWT
+# ==========================================
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "UPDATE_LAST_LOGIN": True,
 }
 
 # ==========================================
@@ -115,15 +131,15 @@ SPECTACULAR_SETTINGS = {
 # ==========================================
 CELERY_BROKER_URL = env("REDIS_URL", default="redis://127.0.0.1:6379/0")
 CELERY_RESULT_BACKEND = env("REDIS_URL", default="redis://127.0.0.1:6379/0")
-CELERY_TIMEZONE = TIME_ZONE
+CELERY_TIMEZONE = TIME_ZONE  # КРИТЕРИЙ: таймзона Celery совпадает с Django
+CELERY_ENABLE_UTC = True
+CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
 
-# Расписание для напоминаний о привычках (запускаем каждую минуту для проверки)
-# В продакшене можно настроить crontab(minute='*/5') или под конкретное время
 CELERY_BEAT_SCHEDULE = {
     "send-habit-reminders": {
-        "task": "habit_tracker.tasks.send_habit_reminders",
-        "schedule": 60.0,  # Каждые 60 секунд для тестирования (поменяй на crontab при сдаче)
+        "task": "habits.tasks.send_habit_reminders",
+        "schedule": crontab(minute="*"),  # каждую минуту проверяем, кому пора напомнить
     },
 }
 
@@ -131,3 +147,4 @@ CELERY_BEAT_SCHEDULE = {
 # TELEGRAM
 # ==========================================
 TELEGRAM_BOT_TOKEN = env("TELEGRAM_BOT_TOKEN", default="")
+TELEGRAM_API_URL = env("TELEGRAM_API_URL", default="https://api.telegram.org")

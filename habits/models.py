@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.exceptions import ValidationError
 
 
 class Habit(models.Model):
@@ -76,3 +77,26 @@ class Habit(models.Model):
 
     def __str__(self):
         return f"{self.action} в {self.time} ({self.place})"
+
+    def clean(self):
+        """Кросс-полевая валидация модели согласно ТЗ."""
+        super().clean()
+        errors = {}
+
+        # 1. Нельзя одновременно указать связанную привычку и вознаграждение
+        if self.reward and self.associated_habit:
+            errors["associated_habit"] = "Нельзя одновременно указать связанную привычку и вознаграждение."
+
+        # 2. У приятной привычки не может быть вознаграждения или связанной привычки
+        if self.is_pleasant:
+            if self.reward:
+                errors["reward"] = "У приятной привычки не может быть вознаграждения."
+            if self.associated_habit:
+                errors["associated_habit"] = "У приятной привычки не может быть связанной привычки."
+
+        # 3. В связанные привычки могут попадать только приятные привычки
+        if self.associated_habit and not self.associated_habit.is_pleasant:
+            errors["associated_habit"] = "В связанные привычки могут попадать только привычки с признаком приятной."
+
+        if errors:
+            raise ValidationError(errors)
